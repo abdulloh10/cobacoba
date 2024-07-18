@@ -4,22 +4,40 @@ on: [push, workflow_dispatch]
 
 jobs:
   build:
-
-    runs-on: windows-latest
-
+    runs-on: self-hosted
     steps:
-    - name: Download
-      run: Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-    - name: Extract
-      run: Expand-Archive ngrok.zip
-    - name: Auth
-      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+    - name: Checkout Code
+      uses: actions/checkout@v2
+
+    - name: Download Ngrok
+      run: curl -o ngrok.zip https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-darwin-amd64.zip
+
+    - name: Extract Ngrok
+      run: unzip ngrok.zip -d ngrok
+
+    - name: Auth Ngrok
+      run: ./ngrok/ngrok authtoken $NGROK_AUTH_TOKEN
       env:
         NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-    - name: Enable TS
-      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
-    - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-    - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
+
+    - name: Enable Remote Desktop
+      run: |
+        sudo systemsetup -setremotelogin on
+        sudo /usr/bin/defaults write /Library/Preferences/com.apple.RemoteManagement.plist EnableScreenSharing -int 1
+        sudo /usr/bin/defaults write /Library/Preferences/com.apple.RemoteManagement.plist EnableARD -int 1
+
+    - name: Create User if not exists
+      run: |
+        if ! id "runneradmin" &>/dev/null; then
+          sudo dscl . -create /Users/runneradmin
+          sudo dscl . -create /Users/runneradmin UserShell /bin/bash
+          sudo dscl . -create /Users/runneradmin RealName "Runner Admin"
+          sudo dscl . -create /Users/runneradmin UniqueID "1001"
+          sudo dscl . -create /Users/runneradmin PrimaryGroupID 1000
+          sudo dscl . -create /Users/runneradmin NFSHomeDirectory /Users/runneradmin
+          sudo dscl . -passwd /Users/runneradmin P@ssw0rd!
+          sudo dscl . -append /Groups/admin GroupMembership runneradmin
+        fi
+
     - name: Create Tunnel
-      run: .\ngrok\ngrok.exe tcp 3389
+      run: ./ngrok/ngrok tcp 5900
